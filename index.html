@@ -1,17 +1,606 @@
-<!DOCTYPE html>
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::create('biography_sections', function (Blueprint $table) {
+            $table->id();
+            $table->string('section_title');
+            $table->text('content');
+            $table->timestamps();
+        });
+    }
+    public function down()
+    {
+        Schema::dropIfExists('biography_sections');
+    }
+};
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::create('portfolio_items', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->string('image_path')->nullable();
+            $table->string('video_path')->nullable();
+            $table->string('youtube_url')->nullable();
+            $table->timestamps();
+        });
+    }
+    public function down()
+    {
+        Schema::dropIfExists('portfolio_items');
+    }
+};
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+class BiographySection extends Model
+{
+    use HasFactory;
+    protected $fillable = [
+        'section_title',
+        'content',
+    ];
+}
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+class PortfolioItem extends Model
+{
+    use HasFactory;
+    protected $fillable = [
+        'title',
+        'description',
+        'image_path',
+        'video_path',
+        'youtube_url',
+    ];
+}
+<?php
+namespace App\Http\Controllers\Public;
+use App\Http\Controllers\Controller;
+use App\Models\BiographySection;
+class BiographyController extends Controller
+{
+    public function index()
+    {
+        $sections = BiographySection::orderBy('created_at', 'desc')->get();
+        return response()->json($sections);
+    }
+}
+<?php
+namespace App\Http\Controllers\Public;
+use App\Http\Controllers\Controller;
+use App\Models\PortfolioItem;
+class PortfolioController extends Controller
+{
+    public function index()
+    {
+        $items = PortfolioItem::orderBy('created_at', 'desc')->get();
+        return response()->json($items);
+    }
+}
+<?php
+namespace App\Http\Controllers\Admin;
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+class AuthController extends Controller
+{
+    public function showLoginForm()
+    {
+        return view('admin.login');
+    }
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
+        if (Auth::attempt(['email' => $credentials['email'], 'password' => $credentials['password']])) {
+            $request->session()->regenerate();
+            return redirect()->intended('/admin');
+        }
+        return back()->withErrors(['email' => 'Login gagal. Periksa kredensial Anda.']);
+    }
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect('/admin/login');
+    }
+}
+<?php
+namespace App\Http\Controllers\Admin;
+use App\Http\Controllers\Controller;
+use App\Models\BiographySection;
+use Illuminate\Http\Request;
+class BiographyController extends Controller
+{
+    public function index()
+    {
+        $sections = BiographySection::orderBy('created_at', 'desc')->get();
+        return view('admin.biography.index', compact('sections'));
+    }
+    public function create()
+    {
+        return view('admin.biography.form');
+    }
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'section_title' => 'required|string|max:255',
+            'content' => 'required|string',
+        ]);
+        BiographySection::create($data);
+        return redirect()->route('admin.biography.index')->with('success', 'Section dibuat.');
+    }
+    public function edit(BiographySection $biography)
+    {
+        return view('admin.biography.form', ['biography' => $biography]);
+    }
+    public function update(Request $request, BiographySection $biography)
+    {
+        $data = $request->validate([
+            'section_title' => 'required|string|max:255',
+            'content' => 'required|string',
+        ]);
+        $biography->update($data);
+        return redirect()->route('admin.biography.index')->with('success', 'Section diperbarui.');
+    }
+    public function destroy(BiographySection $biography)
+    {
+        $biography->delete();
+        return redirect()->route('admin.biography.index')->with('success', 'Section dihapus.');
+    }
+}
+<?php
+namespace App\Http\Controllers\Admin;
+use App\Http\Controllers\Controller;
+use App\Models\PortfolioItem;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+class PortfolioController extends Controller
+{
+    public function index()
+    {
+        $items = PortfolioItem::orderBy('created_at', 'desc')->get();
+        return view('admin.portfolio.index', compact('items'));
+    }
+    public function create()
+    {
+        return view('admin.portfolio.form');
+    }
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            'video' => 'nullable|mimetypes:video/mp4,video/webm|max:51200',
+            'youtube_url' => 'nullable|url',
+        ]);
+        if ($request->hasFile('image')) {
+            $img = $request->file('image');
+            $filename = Str::random(12) . '_' . time() . '.' . $img->getClientOriginalExtension();
+            $path = $img->storeAs('public/uploads/images', $filename);
+            $data['image_path'] = Storage::url($path);
+        }
+        if ($request->hasFile('video')) {
+            $vid = $request->file('video');
+            $filename = Str::random(12) . '_' . time() . '.' . $vid->getClientOriginalExtension();
+            $path = $vid->storeAs('public/uploads/videos', $filename);
+            $data['video_path'] = Storage::url($path);
+        }
+        PortfolioItem::create([
+            'title' => $data['title'],
+            'description' => $data['description'] ?? null,
+            'image_path' => $data['image_path'] ?? null,
+            'video_path' => $data['video_path'] ?? null,
+            'youtube_url' => $data['youtube_url'] ?? null,
+        ]);
+        return redirect()->route('admin.portfolio.index')->with('success', 'Portfolio dibuat.');
+    }
+    public function edit(PortfolioItem $portfolio)
+    {
+        return view('admin.portfolio.form', ['item' => $portfolio]);
+    }
+    public function update(Request $request, PortfolioItem $portfolio)
+    {
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            'video' => 'nullable|mimetypes:video/mp4,video/webm|max:51200',
+            'youtube_url' => 'nullable|url',
+        ]);
+        if ($request->hasFile('image')) {
+            if ($portfolio->image_path) {
+                $old = str_replace('/storage/', 'public/', $portfolio->image_path);
+                Storage::delete($old);
+            }
+            $img = $request->file('image');
+            $filename = Str::random(12) . '_' . time() . '.' . $img->getClientOriginalExtension();
+            $path = $img->storeAs('public/uploads/images', $filename);
+            $data['image_path'] = Storage::url($path);
+        }
+        if ($request->hasFile('video')) {
+            if ($portfolio->video_path) {
+                $old = str_replace('/storage/', 'public/', $portfolio->video_path);
+                Storage::delete($old);
+            }
+            $vid = $request->file('video');
+            $filename = Str::random(12) . '_' . time() . '.' . $vid->getClientOriginalExtension();
+            $path = $vid->storeAs('public/uploads/videos', $filename);
+            $data['video_path'] = Storage::url($path);
+        }
+        $portfolio->update([
+            'title' => $data['title'],
+            'description' => $data['description'] ?? null,
+            'image_path' => $data['image_path'] ?? $portfolio->image_path,
+            'video_path' => $data['video_path'] ?? $portfolio->video_path,
+            'youtube_url' => $data['youtube_url'] ?? null,
+        ]);
+        return redirect()->route('admin.portfolio.index')->with('success', 'Portfolio diperbarui.');
+    }
+    public function destroy(PortfolioItem $portfolio)
+    {
+        if ($portfolio->image_path) {
+            $old = str_replace('/storage/', 'public/', $portfolio->image_path);
+            Storage::delete($old);
+        }
+        if ($portfolio->video_path) {
+            $old = str_replace('/storage/', 'public/', $portfolio->video_path);
+            Storage::delete($old);
+        }
+        $portfolio->delete();
+        return redirect()->route('admin.portfolio.index')->with('success', 'Portfolio dihapus.');
+    }
+}
+<?php
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Public\BiographyController as PublicBiographyController;
+use App\Http\Controllers\Public\PortfolioController as PublicPortfolioController;
+use App\Http\Controllers\Admin\AuthController;
+use App\Http\Controllers\Admin\BiographyController as AdminBiographyController;
+use App\Http\Controllers\Admin\PortfolioController as AdminPortfolioController;
+Route::get('/', function () {
+    return view('public.index');
+});
+Route::get('/admin/login', [AuthController::class, 'showLoginForm']);
+Route::post('/admin/login', [AuthController::class, 'login']);
+Route::post('/admin/logout', [AuthController::class, 'logout'])->name('admin.logout');
+Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/', function () { return redirect()->route('admin.dashboard'); })->name('home');
+    Route::get('/dashboard', function () { return view('admin.dashboard'); })->name('dashboard');
+    Route::resource('biography', AdminBiographyController::class);
+    Route::resource('portfolio', AdminPortfolioController::class);
+});
+<?php
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Public\BiographyController as PublicBiographyController;
+use App\Http\Controllers\Public\PortfolioController as PublicPortfolioController;
+Route::get('/biography', [PublicBiographyController::class, 'index']);
+Route::get('/portfolio', [PublicPortfolioController::class, 'index']);
+Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+    return $request->user();
+});
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <link rel="icon" href="/favicon.ico">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Creative fullstack developer crafting modern and performant solutions. Explore my projects, skills, and technical mindset.">
-  <title>Cyprien Jaquier</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title', config('app.name'))</title>
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
-
 <body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.js"></script>
+    <header class="site-header">
+        <div class="container">
+            <h1 class="logo"><a href="/">{{ config('app.name') }}</a></h1>
+            <nav>
+                <a href="/">Public</a>
+                @auth
+                    <a href="{{ route('admin.dashboard') }}">Dashboard</a>
+                    <form method="POST" action="{{ route('admin.logout') }}" style="display:inline">@csrf <button type="submit">Logout</button></form>
+                @else
+                    <a href="{{ url('/admin/login') }}">Admin</a>
+                @endauth
+            </nav>
+        </div>
+    </header>
+    <main class="container">
+        @if (session('success'))
+            <div class="alert success">{{ session('success') }}</div>
+        @endif
+        @yield('content')
+    </main>
+    <footer class="site-footer">© {{ date('Y') }} {{ config('app.name') }}</footer>
 </body>
-
 </html>
+@extends('layouts.app')
+@section('title', 'Home')
+@section('content')
+<section id="about" class="bio-sections" aria-labelledby="about-title">
+    <h2 id="about-title">About</h2>
+    <div id="bioContainer">
+    </div>
+</section>
+<section id="portfolio" class="portfolio" aria-labelledby="portfolio-title">
+    <h2 id="portfolio-title">Portfolio</h2>
+    <div class="grid" id="portfolioGrid"></div>
+</section>
+<script>
+async function loadContent() {
+    const bioRes = await fetch('/api/biography');
+    if (bioRes.ok) {
+        const sections = await bioRes.json();
+        const container = document.getElementById('bioContainer');
+        sections.forEach(s => {
+            const article = document.createElement('article');
+            article.className = 'bio';
+            article.innerHTML = `<h3>${escapeHtml(s.section_title)}</h3><div class="content">${s.content}</div>`;
+            container.appendChild(article);
+        });
+    }
+    const portRes = await fetch('/api/portfolio');
+    if (portRes.ok) {
+        const items = await portRes.json();
+        const grid = document.getElementById('portfolioGrid');
+        items.forEach(i => {
+            const card = document.createElement('figure');
+            card.className = 'card';
+            const img = i.image_path ? `<img src="${i.image_path}" alt="${i.title}">` : '';
+            const video = i.youtube_url ? `<iframe src="${embedYouTube(i.youtube_url)}" frameborder="0" allowfullscreen></iframe>` : '';
+            card.innerHTML = `${img}<figcaption><h4>${i.title}</h4><p>${i.description || ''}</p>${video}</figcaption>`;
+            grid.appendChild(card);
+        });
+    }
+}
+function escapeHtml(s){ return String(s).replace(/[&<>\"]/g, c => '&#'+c.charCodeAt(0)+';'); }
+function embedYouTube(url){ const idMatch = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/); return idMatch? `https://www.youtube.com/embed/${idMatch[1]}` : ''; }
+loadContent();
+</script>
+@endsection
+@extends('layouts.app')
+@section('title', 'Admin Login')
+@section('content')
+<div class="auth-form">
+    <h2>Admin Login</h2>
+    @if($errors->any())
+        <div class="alert error">{{ $errors->first() }}</div>
+    @endif
+    <form method="POST" action="{{ url('/admin/login') }}">
+        @csrf
+        <label>Email<input name="email" type="email" required></label>
+        <label>Password<input name="password" type="password" required></label>
+        <button type="submit">Log in</button>
+    </form>
+</div>
+@endsection
+@extends('layouts.app')
+@section('title', 'Dashboard')
+@section('content')
+<h2>Admin Dashboard</h2>
+<ul>
+    <li><a href="{{ route('admin.biography.index') }}">Biography Sections</a></li>
+    <li><a href="{{ route('admin.portfolio.index') }}">Portfolio Items</a></li>
+</ul>
+@endsection
+@extends('layouts.app')
+@section('title', 'Biography Sections')
+@section('content')
+<h2>Biography Sections</h2>
+<a href="{{ route('admin.biography.create') }}">New Section</a>
+<table>
+    <thead><tr><th>Title</th><th>Actions</th></tr></thead>
+    <tbody>
+    @foreach($sections as $s)
+        <tr>
+            <td>{{ $s->section_title }}</td>
+            <td>
+                <a href="{{ route('admin.biography.edit', $s) }}">Edit</a>
+                <form method="POST" action="{{ route('admin.biography.destroy', $s) }}" style="display:inline">@csrf @method('DELETE')<button type="submit">Delete</button></form>
+            </td>
+        </tr>
+    @endforeach
+    </tbody>
+</table>
+@endsection
+@extends('layouts.app')
+@section('title', isset($biography) ? 'Edit Section' : 'Create Section')
+@section('content')
+<h2>{{ isset($biography) ? 'Edit' : 'Create' }} Biography Section</h2>
+<form method="POST" action="{{ isset($biography) ? route('admin.biography.update', $biography) : route('admin.biography.store') }}">
+    @csrf
+    @if(isset($biography)) @method('PUT') @endif
+    <label>Judul<section_title><input name="section_title" required value="{{ old('section_title', $biography->section_title ?? '') }}"></label>
+    <label>Konten<textarea name="content" required>{{ old('content', $biography->content ?? '') }}</textarea></label>
+    <button type="submit">Save</button>
+</form>
+@endsection
+@extends('layouts.app')
+@section('title', 'Portfolio Items')
+@section('content')
+<h2>Portfolio Items</h2>
+<a href="{{ route('admin.portfolio.create') }}">New Item</a>
+<table>
+    <thead><tr><th>Title</th><th>Media</th><th>Actions</th></tr></thead>
+    <tbody>
+    @foreach($items as $i)
+        <tr>
+            <td>{{ $i->title }}</td>
+            <td>@if($i->image_path)<img src="{{ $i->image_path }}" style="height:40px">@endif @if($i->youtube_url) YouTube @endif</td>
+            <td>
+                <a href="{{ route('admin.portfolio.edit', $i) }}">Edit</a>
+                <form method="POST" action="{{ route('admin.portfolio.destroy', $i) }}" style="display:inline">@csrf @method('DELETE')<button type="submit">Delete</button></form>
+            </td>
+        </tr>
+    @endforeach
+    </tbody>
+</table>
+@endsection
+@extends('layouts.app')
+@section('title', isset($item) ? 'Edit Item' : 'Create Item')
+@section('content')
+<h2>{{ isset($item) ? 'Edit' : 'Create' }} Portfolio Item</h2>
+<form method="POST" action="{{ isset($item) ? route('admin.portfolio.update', $item) : route('admin.portfolio.store') }}" enctype="multipart/form-data">
+    @csrf
+    @if(isset($item)) @method('PUT') @endif
+    <label>Title<input name="title" required value="{{ old('title', $item->title ?? '') }}"></label>
+    <label>Description<textarea name="description">{{ old('description', $item->description ?? '') }}</textarea></label>
+    <label>Image<input name="image" type="file" accept="image/png,image/jpeg"></label>
+    <label>Video<input name="video" type="file" accept="video/mp4,video/webm"></label>
+    <label>YouTube URL<input name="youtube_url" type="url" value="{{ old('youtube_url', $item->youtube_url ?? '') }}"></label>
+    <button type="submit">Save</button>
+</form>
+@endsection
+:root{
+  --bg:#0f1720; --card:#111827; --text:#e6eef8; --muted:#9aa6b2;
+  --accent:#38bdf8; --radius:8px; --gap:1rem;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background:linear-gradient(180deg,var(--bg) 0%, #08101a 100%); color:var(--text); line-height:1.5;
+}
+.site-header{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;background:rgba(0,0,0,0.2);}
+.logo{margin:0;font-size:1.25rem}
+nav a{color:var(--muted);margin-left:1rem;text-decoration:none}
+main{padding:2rem;max-width:1100px;margin:0 auto}
+.bio-sections .bio{background:var(--card);padding:1rem;border-radius:var(--radius);margin-bottom:1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--gap)}
+.card{background:var(--card);border-radius:8px;overflow:hidden;padding:0}
+.card img{width:100%;height:150px;object-fit:cover;display:block}
+.card figcaption{padding:1rem}
+.site-footer{text-align:center;color:var(--muted);padding:2rem 0}
+.container{max-width:1100px;margin:0 auto;padding:0 1rem}
+.alert{padding:0.5rem 1rem;border-radius:6px;margin-bottom:1rem}
+.alert.success{background:#052e17;color:#b6f6c6}
+.alert.error{background:#2b0d0d;color:#ffb3b3}
+.auth-form{max-width:420px;margin:2rem auto;background:var(--card);padding:1rem;border-radius:8px}
+form label{display:block;margin-bottom:0.75rem}
+form input, form textarea{width:100%;padding:0.5rem;border-radius:4px;border:1px solid #233043;background:#0b1014;color:var(--text)}
+form button{margin-top:0.5rem;padding:0.5rem 1rem;border-radius:6px;background:var(--accent);border:none;color:#042331}
+@media (max-width:600px){ .site-header{padding:0.75rem 1rem} main{padding:1rem} }
+<?php
+namespace Database\Seeders;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+class BiographySeeder extends Seeder
+{
+    public function run()
+    {
+        DB::table('biography_sections')->insert([
+            [
+                'section_title' => 'About Me',
+                'content' => 'Full stack developer dengan pengalaman membangun aplikasi web modern.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'section_title' => 'Skills',
+                'content' => 'PHP, Laravel, JavaScript, CSS, SQL',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+    }
+}
+<?php
+namespace Database\Seeders;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+class PortfolioSeeder extends Seeder
+{
+    public function run()
+    {
+        DB::table('portfolio_items')->insert([
+            [
+                'title' => 'Personal Blog',
+                'description' => 'A simple blog built with Laravel',
+                'image_path' => '/storage/uploads/images/sample-blog.png',
+                'youtube_url' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'title' => 'My Project',
+                'description' => 'A front-end project showcasing animations',
+                'image_path' => '/storage/uploads/images/sample-project.png',
+                'youtube_url' => 'https://youtu.be/dQw4w9WgXcQ',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+    }
+}
+<?php
+namespace Database\Seeders;
+use Illuminate\Database\Seeder;
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $this->call([
+            \Database\Seeders\BiographySeeder::class,
+            \Database\Seeders\PortfolioSeeder::class,
+        ]);
+    }
+}
+<?php
+$host = '127.0.0.1';
+$port = 3306;
+$user = 'root';
+$pass = '';
+$db = 'blog_db';
+try {
+    $pdo = new PDO("mysql:host=$host;port=$port", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+    echo "CREATED\n";
+} catch (PDOException $e) {
+    echo "ERR: " . $e->getMessage() . "\n";
+    exit(1);
+}
+<?php
+require __DIR__ . '/../vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->safeLoad();
+$host = $_ENV['DB_HOST'] ?? '127.0.0.1';
+$port = $_ENV['DB_PORT'] ?? 3306;
+$db = $_ENV['DB_DATABASE'] ?? 'blog_db';
+$user = $_ENV['DB_USERNAME'] ?? 'root';
+$pass = $_ENV['DB_PASSWORD'] ?? '';
+$email = 'admin@example.com';
+$password = 'admin123';
+try {
+    $pdo = new PDO("mysql:host=$host;port=$port;dbname=$db", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        echo "User dengan email '$email' sudah ada.\n";
+        exit(0);
+    }
+    $hash = password_hash($password, PASSWORD_BCRYPT);
+    $stmt = $pdo->prepare('INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, NOW())');
+    $stmt->execute(['Admin', $email, $hash]);
+    echo "User 'admin' dibuat dengan email: $email dan password: $password\n";
+    echo "Segera ganti password setelah login (gunakan php artisan tinker atau endpoint profile).\n";
+} catch (PDOException $e) {
+    echo "ERR: " . $e->getMessage() . "\n";
+    exit(1);
+}
